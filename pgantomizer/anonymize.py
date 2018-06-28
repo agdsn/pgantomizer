@@ -145,10 +145,15 @@ def anonymize_table(conn, cursor, schema, table, disable_schema_changes):
 
     logging.debug('Processing "{}" table'.format(table))
 
-    cursor.execute("SELECT column_name, data_type FROM information_schema.columns "
-        "WHERE table_schema = 'public' AND table_name = '{}'".format(table))
+    # Truncate and return if desired
+    if schema[table].get('truncate', False) == True:
+        logging.debug('Running TRUNCATE on {} ...'.format(table))
+        cursor.execute('TRUNCATE {}'.format(table))
+        return
 
     # Generate list of column_update SQL snippets for UPDATE
+    cursor.execute("SELECT column_name, data_type FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name = '{}'".format(table))
     column_updates = []
     updated_column_names = []
     for column_name, data_type in cursor.fetchall():
