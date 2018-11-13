@@ -56,7 +56,7 @@ class InvalidAnonymizationSchemaError(PgantomizerError):
 
 
 def get_table_pk_name(schema, table):
-    return schema[table].get('pk', DEFAULT_PK_COLUMN_NAME) if schema[table] else DEFAULT_PK_COLUMN_NAME
+    return schema[table].get('pk', DEFAULT_PK_COLUMN_NAME) if table in schema else DEFAULT_PK_COLUMN_NAME
 
 
 def get_db_args_from_env():
@@ -125,9 +125,9 @@ def check_schema(cursor, schema, db_args):
 
 def get_column_update(schema, table, column, data_type):
 
-    custom_rule = get_in(schema, [table, 'custom_rules', column]) if schema[table] else None
+    custom_rule = get_in(schema, [table, 'custom_rules', column]) if table in schema else None
 
-    if column == get_table_pk_name(schema, table) or (schema[table] and column in schema[table].get('raw', [])):
+    if column == get_table_pk_name(schema, table) or (table in schema and column in schema[table].get('raw', [])):
         return None
     elif data_type in ANONYMIZE_DATA_TYPE or custom_rule is not None:
         if custom_rule and type(custom_rule) is dict and 'value' in custom_rule:
@@ -154,7 +154,7 @@ def anonymize_table(conn, cursor, schema, table, disable_schema_changes):
     logging.debug('Processing "{}" table'.format(table))
 
     # Truncate and return if desired
-    if schema[table] and schema[table].get('truncate', False) == True:
+    if table in schema and schema[table].get('truncate', False) == True:
         logging.debug('Running TRUNCATE on {} ...'.format(table))
         cursor.execute('TRUNCATE {}'.format(table))
         return
@@ -177,7 +177,7 @@ def anonymize_table(conn, cursor, schema, table, disable_schema_changes):
         update_statement = "UPDATE {table} SET {column_updates_sql} {where_clause}".format(
             table=table,
             column_updates_sql=", ".join(column_updates),
-            where_clause="WHERE {}".format(schema[table].get('where', 'TRUE') if schema[table] else 'TRUE')
+            where_clause="WHERE {}".format(schema[table].get('where', 'TRUE') if table in schema else 'TRUE')
         )
         logging.debug('Running UPDATE on {} for columns {} ...'.format(table, ", ".join(updated_column_names)))
         cursor.execute(update_statement)
