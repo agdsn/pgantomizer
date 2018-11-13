@@ -138,7 +138,7 @@ def get_column_update(schema, table, column, data_type):
             if custom_rule['value'] is None:
                 raise MissingAnonymizationRuleError('Custom rule "{}" must provide a non-None value'.format(custom_rule))
             else:
-                return "\"{column}\" = '{value}'".format(
+                return "\"{column}\" = {value}".format(
                     column=column,
                     value=custom_rule['value']
                 )
