@@ -22,8 +22,8 @@ ANONYMIZE_DATA_TYPE = {
     'integer': 'ceil(random() * 100)',
     'smallint': 'ceil(random() * 100)',
     'numeric': 'floor(random() * 10)',
-    'character varying': lambda column, pk_name: "'{}_' || {}".format(column, pk_name),
-    'text': lambda column, pk_name: "'{}_' || {}".format(column, pk_name),
+    'character varying': lambda column, pk_name: "'{}_' || \"{}\"".format(column, pk_name),
+    'text': lambda column, pk_name: "'{}_' || \"{}\"".format(column, pk_name),
     'inet': "'111.111.111.111'",
     'json': "'{}'",
     'tsvector': NULL_ANONYMIZE
@@ -98,7 +98,7 @@ def prepare_column_for_anonymization(conn, cursor, table, column, data_type):
     """
     if data_type == 'character varying':
         logging.debug('Extending length of varchar {}.{}'.format(table, column))
-        cursor.execute("ALTER TABLE {table} ALTER COLUMN {column} TYPE varchar(250);".format(
+        cursor.execute("ALTER TABLE \"{table}\" ALTER COLUMN \"{column}\" TYPE varchar(250);".format(
             table=table,
             column=column
         ))
@@ -114,9 +114,13 @@ def check_schema(cursor, schema, db_args):
         columns_to_validate = raw_columns + custom_rule_columns
         if pk_column is not None:
             columns_to_validate.append(pk_column)
+        if columns_to_validate:
+            columns_expr = '"{}"'.format('", "'.join(columns_to_validate))
+        else:
+            columns_expr = '*'
         try:
-            cursor.execute("SELECT {columns} FROM {table} LIMIT 1;".format(
-                columns='"{}"'.format('", "'.join(columns_to_validate)),
+            cursor.execute("SELECT {columns} FROM \"{table}\" LIMIT 1;".format(
+                columns=columns_expr,
                 table=table
             ))
         except psycopg2.ProgrammingError as e:
@@ -134,14 +138,14 @@ def get_column_update(schema, table, column, data_type):
             if custom_rule['value'] is None:
                 raise MissingAnonymizationRuleError('Custom rule "{}" must provide a non-None value'.format(custom_rule))
             else:
-                return "{column} = '{value}'".format(
+                return "\"{column}\" = '{value}'".format(
                     column=column,
                     value=custom_rule['value']
                 )
         elif custom_rule and custom_rule not in CUSTOM_ANONYMIZATION_RULES:
             raise MissingAnonymizationRuleError('Custom rule "{}" is not defined'.format(custom_rule))
         anonymization = CUSTOM_ANONYMIZATION_RULES[custom_rule] if custom_rule else ANONYMIZE_DATA_TYPE[data_type]
-        return "{column} = {value}".format(
+        return "\"{column}\" = {value}".format(
             column=column,
             value=anonymization(column, get_table_pk_name(schema, table)) if callable(anonymization) else anonymization
         )
@@ -174,7 +178,7 @@ def anonymize_table(conn, cursor, schema, table, disable_schema_changes):
 
     # Process UPDATE if any column_updates requested
     if len(column_updates) > 0:
-        update_statement = "UPDATE {table} SET {column_updates_sql} {where_clause}".format(
+        update_statement = "UPDATE \"{table}\" SET {column_updates_sql} {where_clause}".format(
             table=table,
             column_updates_sql=", ".join(column_updates),
             where_clause="WHERE {}".format(schema[table].get('where', 'TRUE') if table in schema else 'TRUE')
