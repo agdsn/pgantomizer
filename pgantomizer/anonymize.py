@@ -38,9 +38,9 @@ CUSTOM_ANONYMIZATION_RULES = {
 }
 
 
-DB_ARG_NAMES = ('dbname', 'user', 'password', 'host', 'port')
+DB_ARG_NAMES = ('dbname', 'user', 'password', 'host', 'port', 'conn')
 DB_ENV_NAMES = ('ANONYMIZED_DB_NAME', 'ANONYMIZED_DB_USER', 'ANONYMIZED_DB_PASS', 'ANONYMIZED_DB_HOST',
-                'ANONYMIZED_DB_PORT')
+                'ANONYMIZED_DB_PORT', 'ANONYMIZED_DB_CONN')
 
 
 class PgantomizerError(Exception):
@@ -64,7 +64,17 @@ def get_db_args_from_env():
 
 
 def get_psql_db_args(db_args):
-    return '-d {dbname} -U {user} -h {host} -p {port}'.format(**db_args)
+    if 'conn' in db_args:
+        return db_args['conn']
+    else:
+        return '-d {dbname} -U {user} -h {host} -p {port}'.format(**db_args)
+
+
+def create_psycopg2_connection(db_args):
+    if 'conn' in db_args:
+        return psycopg2.connect(db_args['conn'])
+    else:
+        return psycopg2.connect(**db_args)
 
 
 def drop_schema(db_args):
@@ -190,7 +200,7 @@ def anonymize_table(conn, cursor, schema, table, disable_schema_changes):
 
 
 def anonymize_db(schema, db_args, disable_schema_changes):
-    with psycopg2.connect(**db_args) as conn:
+    with create_psycopg2_connection(db_args) as conn:
         with conn.cursor() as cursor:
             check_schema(cursor, schema, db_args)
             cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type <> 'VIEW' ORDER BY table_name;")
@@ -238,6 +248,8 @@ def main():
                         default='')
     parser.add_argument('--host', help='host where the DB is running', default='localhost')
     parser.add_argument('--port', help='port where the DB is running', default='5432')
+    parser.add_argument('--conn', help='connection string of the anonymized database')
+
 
     args = parser.parse_args()
     if args.verbose:
@@ -252,8 +264,8 @@ def main():
         sys.exit('File with schema "{}" does not exist.'.format(args.schema))
 
     db_args = ({name: value for name, value in zip(DB_ARG_NAMES, (args.dbname, args.user, args.password, args.host,
-                                                                  args.port))}
-               if args.dbname and args.user else None)
+                                                                  args.port, args.conn))}
+               if (args.dbname and args.user) or args.conn else None)
 
     load_anonymize_remove(args.dump_file, args.schema, args.skip_restore, args.disable_schema_changes, args.leave_dump, db_args)
 
