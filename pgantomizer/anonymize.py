@@ -77,21 +77,22 @@ def create_psycopg2_connection(db_args):
         return psycopg2.connect(**db_args)
 
 
-def drop_schema(db_args):
+def drop_schema(db_args, db_schema):
     subprocess.run(
-        'PGPASSWORD={password} psql {db_args} -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" {redirect}'.format(
+        'PGPASSWORD={password} psql {db_args} -c "DROP SCHEMA {schema} CASCADE; CREATE SCHEMA {schema};" {redirect}'.format(
             password=db_args.get('password'),
             db_args=get_psql_db_args(db_args),
+            schema=db_schema,
             redirect='' if logging.getLogger().getEffectiveLevel() == logging.DEBUG else '>/dev/null 2>&1'),
         shell=True
     )
 
 
-def load_db_to_new_instance(filename, db_args):
+def load_db_to_new_instance(filename, db_args, db_schema):
     if not os.path.isfile(filename):
         raise IOError('Dump file {} is not a file.'.format(filename))
     os.putenv('PGPASSWORD', db_args.get('password'))
-    drop_schema(db_args)
+    drop_schema(db_args, db_schema)
     subprocess.run(
         'PGPASSWORD={password} pg_restore -Fc -j 8 {db_args} {filename} {redirect}'.format(
             password=db_args.get('password'),
@@ -163,7 +164,7 @@ def get_column_update(schema, table, column, data_type):
         raise MissingAnonymizationRuleError('No rule to anonymize type "{}" for column "{}"'.format(data_type, column))
 
 
-def anonymize_table(conn, cursor, schema, table, disable_schema_changes):
+def anonymize_table(conn, cursor, schema, db_schema, table, disable_schema_changes):
 
     logging.debug('Processing "{}" table'.format(table))
 
@@ -175,7 +176,7 @@ def anonymize_table(conn, cursor, schema, table, disable_schema_changes):
 
     # Generate list of column_update SQL snippets for UPDATE
     cursor.execute("SELECT column_name, data_type FROM information_schema.columns "
-        "WHERE table_schema = 'public' AND table_name = '{}'".format(table))
+        "WHERE table_schema = '{}' AND table_name = '{}'".format(db_schema, table))
     column_updates = []
     updated_column_names = []
     for column_name, data_type in cursor.fetchall():
@@ -199,29 +200,29 @@ def anonymize_table(conn, cursor, schema, table, disable_schema_changes):
         logging.debug('Nothing to anonymize for {}'.format(table))
 
 
-def anonymize_db(schema, db_args, disable_schema_changes):
+def anonymize_db(schema, db_args, db_schema, disable_schema_changes):
     with create_psycopg2_connection(db_args) as conn:
         with conn.cursor() as cursor:
             check_schema(cursor, schema, db_args)
-            cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type <> 'VIEW' ORDER BY table_name;")
+            cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = '{}' AND table_type <> 'VIEW' ORDER BY table_name;".format(db_schema))
             for table_name in cursor.fetchall():
-                anonymize_table(conn, cursor, schema, table_name[0], disable_schema_changes)
+                anonymize_table(conn, cursor, schema, db_schema, table_name[0], disable_schema_changes)
             logging.debug('Anonymization complete!')
 
 
-def load_anonymize_remove(dump_file, schema, skip_restore=False, disable_schema_changes=False, leave_dump=False, db_args=None):
+def load_anonymize_remove(dump_file, schema, db_schema, skip_restore=False, disable_schema_changes=False, leave_dump=False, db_args=None):
     schema = yaml.load(open(schema))
     db_args = db_args or get_db_args_from_env()
 
     if skip_restore:
         logging.debug('Skipping restore process and using existing schema')
-        anonymize_db(schema, db_args, disable_schema_changes)
+        anonymize_db(schema, db_args, db_schema, disable_schema_changes)
     else:
         try:
             load_db_to_new_instance(dump_file, db_args)
-            anonymize_db(schema, db_args, disable_schema_changes)
+            anonymize_db(schema, db_args, db_schema, disable_schema_changes)
         except Exception: # Any exception must result into droping the schema to prevent sensitive data leakage
-            drop_schema(db_args)
+            drop_schema(db_args, db_schema)
             raise
         finally:
             if not leave_dump:
@@ -242,7 +243,8 @@ def main():
                         default='./schema.yaml')
     parser.add_argument('-f', '--dump-file',  help='path to the dump of DB to load and anonymize',
                         default='to_anonymize.sql')
-    parser.add_argument('--dbname',  help='name of the database to dump')
+    parser.add_argument('--dbname',  help='name of the database to anonymize')
+    parser.add_argument('--dbschema', help='name of the database schema to anonymize', default='public')
     parser.add_argument('--user', help='name of the Postgres user with access to the anonymized database')
     parser.add_argument('--password', help='password of the Postgres user with access to the anonymized database',
                         default='')
@@ -267,7 +269,7 @@ def main():
                                                                   args.port, args.conn))}
                if (args.dbname and args.user) or args.conn else None)
 
-    load_anonymize_remove(args.dump_file, args.schema, args.skip_restore, args.disable_schema_changes, args.leave_dump, db_args)
+    load_anonymize_remove(args.dump_file, args.schema, args.dbschema, args.skip_restore, args.disable_schema_changes, args.leave_dump, db_args)
 
 
 if __name__ == '__main__':
