@@ -15,7 +15,7 @@ def get_pg_dump_db_args(db_args):
 
 
 def dump_db(dump_path, dump_format, schema_path, db_schema, db_conn, password='', *db_args):
-    schema = yaml.load(open(schema_path))
+    schema = yaml.safe_load(open(schema_path))
     password = password or os.environ.get('DB_DEFAULT_PASS', '')
     os.putenv('PGPASSWORD', password)
     cmd = 'PGPASSWORD={password} pg_dump {format} {args} {schema} {tables} -f {filename}'.format(
