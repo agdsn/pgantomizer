@@ -32,8 +32,8 @@ setup(
     ],
     keywords='postgres anonymization dump',
     install_requires=[
-        'psycopg2>=2.6.1',
-        'pyyaml>=3.11',
+        'psycopg2~=2.9.5',
+        'pyyaml~=6.0',
     ],
     setup_requires=[
         'pytest-runner',
