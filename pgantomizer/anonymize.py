@@ -211,7 +211,7 @@ def anonymize_db(schema, db_args, db_schema, disable_schema_changes):
 
 
 def load_anonymize_remove(dump_file, schema, db_schema, skip_restore=False, disable_schema_changes=False, leave_dump=False, db_args=None):
-    schema = yaml.load(open(schema))
+    schema = yaml.safe_load(open(schema))
     db_args = db_args or get_db_args_from_env()
 
     if skip_restore:
